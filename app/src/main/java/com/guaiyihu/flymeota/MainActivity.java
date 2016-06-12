@@ -4,12 +4,17 @@ import android.annotation.SuppressLint;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
+import android.provider.Settings;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.os.SystemProperties;
@@ -18,6 +23,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.os.RecoverySystem;
+import android.widget.Toast;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
@@ -41,8 +47,12 @@ public class MainActivity extends AppCompatActivity {
     private TextView newMessage;
     private TextView version;
     private File otaZip = null;
+    private IntentFilter intentFilter;
+    private int netState = 0;//0.Wi-Fi,1.移动数据,2.无网络
     private int mode = 0;//0.检查更新,1.下载更新,2.正在下载,3.立即安装,4.正在检查更新
+    private NetworkChangeReceiver networkChangeReceiver;
     private DownloadReceiver receiver;
+    private AlertDialog.Builder dialog;
     private Handler handler = new Handler() {
 
         @Override
@@ -74,9 +84,11 @@ public class MainActivity extends AppCompatActivity {
 
     };
 
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.activity_main);
 
         currentVersion = SystemProperties.get("ro.build.display.id");
@@ -84,30 +96,40 @@ public class MainActivity extends AppCompatActivity {
         version = (TextView)findViewById(R.id.version);
         newMessage = (TextView)findViewById(R.id.message);
         receiver = new DownloadReceiver();
+        intentFilter=new IntentFilter();
+        intentFilter.addAction("android.net.conn.CONNECTIVITY_CHANGE");
+        networkChangeReceiver=new NetworkChangeReceiver();
+        registerReceiver(networkChangeReceiver,intentFilter);
+        dialog =new AlertDialog.Builder(MainActivity.this);
 
-        version.setText("当前版本" + "\n" + currentVersion);
+        version.setText("当前版本 " + currentVersion);
 
         check.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if(mode == 0) {//0模式点击后检查更新
-                    check();
-                    Message message = handler.obtainMessage();//更新ui中的按钮,其中按钮没有任何绑定事件
-                    message.what = 4;
-                    handler.sendMessage(message);
-               } else if(mode == 1) {//1模式监听下载事件然后
-                    download(uri);
-                    Message message = handler.obtainMessage();
-                    message.what = 2;
-                    handler.sendMessage(message);
-                }else if(mode == 3) {//3模式执行安装
-                    otaZip = Environment.getExternalStoragePublicDirectory("/sdcard/Download/" + newVersion + ".zip");
-                    try {
-                        RecoverySystem.installPackage(MainActivity.this, otaZip);
-                    } catch (IOException e) {
-                        Log.e("", e.getMessage());
+                if(netState == 2){
+                    Toast.makeText(MainActivity.this, "当前没有网络", Toast.LENGTH_SHORT).show();
+                }else {
+                    if(mode == 0) {//0模式点击后检查更新
+                        check();
+                        Message message = handler.obtainMessage();//更新ui中的按钮,其中按钮没有任何绑定事件
+                        message.what = 4;
+                        handler.sendMessage(message);
+                    } else if(mode == 1) {//1模式监听下载事件然后
+                        download(uri);
+                        Message message = handler.obtainMessage();
+                        message.what = 2;
+                        handler.sendMessage(message);
+                    }else if(mode == 3) {//3模式执行安装
+                        otaZip = Environment.getExternalStoragePublicDirectory("/sdcard/Download/" + newVersion + ".zip");
+                        try {
+                            RecoverySystem.installPackage(MainActivity.this, otaZip);
+                        } catch (IOException e) {
+                            Log.e("", e.getMessage());
+                        }
                     }
                 }
+
 
 
             }
@@ -190,15 +212,57 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    class NetworkChangeReceiver extends BroadcastReceiver{
+
+        @Override
+        public void onReceive(Context context,Intent intent){
+            ConnectivityManager connManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            NetworkInfo mWifi = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+            NetworkInfo mMobile = connManager.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
+            if (mWifi.isConnected()) {
+                netState = 0;
+                
+            }else if(mMobile.isConnected()){
+                netState = 1;
+                Toast.makeText(context, "注意：你在使用手机流量哟~", Toast.LENGTH_SHORT).show();
+            }else{
+                netState = 2;
+                dialog.setTitle("当前没有网络！");
+                dialog.setMessage("请检查你的网络连接！");
+                dialog.setCancelable(true);
+                dialog.setPositiveButton("确定", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+
+                    }
+                });
+                dialog.setNegativeButton("设置", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Intent intent =  new Intent(Settings.ACTION_DATA_ROAMING_SETTINGS);
+                        startActivity(intent);
+                    }
+                });
+                dialog.show();
+            }
+        }
+    }
+
     @Override
     protected void onResume() {
         registerReceiver(receiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+        registerReceiver(networkChangeReceiver,intentFilter);
         super.onResume();
     }
 
     @Override
     protected void onDestroy() {
-        if(receiver != null)unregisterReceiver(receiver);
+        if(receiver != null){
+            unregisterReceiver(receiver);
+        }
+        if(networkChangeReceiver != null){
+            unregisterReceiver(networkChangeReceiver);
+        }
         super.onDestroy();
     }
 
