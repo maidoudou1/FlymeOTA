@@ -8,15 +8,15 @@
     android:paddingRight="@dimen/activity_horizontal_margin"
     android:paddingTop="@dimen/activity_vertical_margin"
     android:background="@mipmap/flyme"
-    tools:context="com.guaiyihu.flymeota.MainActivity">
+    tools:context=".activity.MainActivity">
 
     <Button
         android:id="@+id/check"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="45dp"
         android:text="检查更新"
         android:textSize="15dp"
-        android:background="@mipmap/update"
+        android:background="@drawable/update_button"
         android:layout_marginBottom="18dp"
         android:layout_alignParentBottom="true"
         android:layout_alignParentLeft="true"

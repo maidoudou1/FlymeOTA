@@ -1,4 +1,4 @@
-package com.guaiyihu.flymeota;
+package com.guaiyihu.flymeota.activity;
 
 import android.annotation.SuppressLint;
 import android.app.DownloadManager;
@@ -25,6 +25,9 @@ import android.widget.TextView;
 import android.os.RecoverySystem;
 import android.widget.Toast;
 
+import com.guaiyihu.flymeota.R;
+import com.guaiyihu.flymeota.utils.UpdateTools;
+
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
@@ -42,7 +45,7 @@ public class MainActivity extends AppCompatActivity {
     private String OTAMessage;//获取更新信息
     private String uri;//获取下载链接
     private String newVersion;//获取服务器上面的新版本号
-    private String s = null;
+    private String OTASite = "https://raw.githubusercontent.com/GuaiYiHu/FlymeOTASite/master/update.json";
     private Button check;
     private TextView newMessage;
     private TextView version;
@@ -53,6 +56,8 @@ public class MainActivity extends AppCompatActivity {
     private NetworkChangeReceiver networkChangeReceiver;
     private DownloadReceiver receiver;
     private AlertDialog.Builder dialog;
+    private DownloadManager dManager;
+    private UpdateTools updateTools;
     private Handler handler = new Handler() {
 
         @Override
@@ -70,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
                     break;
                 case 3:
                     check.setText("立即安装");
+                    mode = 3;
                     break;
                 case 4:
                     check.setText("正在检查更新...");
@@ -77,13 +83,16 @@ public class MainActivity extends AppCompatActivity {
                     break;
                 case 5:
                     check.setText("检查更新");
+                    newMessage.setText("当前无可用更新");
                     mode = 0;
+                    break;
+                case 6:
+                    check.setText("检查更新");
+                    newMessage.setText("无法检查更新");
                     break;
             }
         }
-
     };
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,6 +100,7 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
 
+        updateTools = new UpdateTools();
         currentVersion = SystemProperties.get("ro.build.display.id");
         check = (Button)findViewById(R.id.check);
         version = (TextView)findViewById(R.id.version);
@@ -101,6 +111,7 @@ public class MainActivity extends AppCompatActivity {
         networkChangeReceiver=new NetworkChangeReceiver();
         registerReceiver(networkChangeReceiver,intentFilter);
         dialog =new AlertDialog.Builder(MainActivity.this);
+        dManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
 
         version.setText("当前版本 " + currentVersion);
 
@@ -108,18 +119,15 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 if(netState == 2){
+                    updateTools.sendUpdateMessage(6, handler);
                     Toast.makeText(MainActivity.this, "当前没有网络", Toast.LENGTH_SHORT).show();
                 }else {
                     if(mode == 0) {//0模式点击后检查更新
-                        check();
-                        Message message = handler.obtainMessage();//更新ui中的按钮,其中按钮没有任何绑定事件
-                        message.what = 4;
-                        handler.sendMessage(message);
+                        check(OTASite);
+                        updateTools.sendUpdateMessage(4, handler);
                     } else if(mode == 1) {//1模式监听下载事件然后
-                        download(uri);
-                        Message message = handler.obtainMessage();
-                        message.what = 2;
-                        handler.sendMessage(message);
+                        updateTools.download(uri, newVersion, dManager);
+                        updateTools.sendUpdateMessage(2, handler);
                     }else if(mode == 3) {//3模式执行安装
                         otaZip = Environment.getExternalStoragePublicDirectory("/sdcard/Download/" + newVersion + ".zip");
                         try {
@@ -131,32 +139,27 @@ public class MainActivity extends AppCompatActivity {
                 }
 
 
-
             }
         });
 
     }
 
-    private void check() {
+    private void check(final String site) {
 
         new Thread(new Runnable() {
             @Override
             public void run() {
-                HttpGet get = new HttpGet("https://raw.githubusercontent.com/GuaiYiHu/FlymeOTASite/master/update.json");
+                HttpGet get = new HttpGet(site);
                 HttpClient httpClient = new DefaultHttpClient();
                 try {
                     HttpResponse httpResponse = httpClient.execute(get);
-                    s = EntityUtils.toString(httpResponse.getEntity());
+                    String s = EntityUtils.toString(httpResponse.getEntity());
                     parseJSONWithJSONObject(s);
                     if(newVersion.equals(currentVersion)){
-                        Message message = handler.obtainMessage();//检查更新完了更改ui
-                        message.what = 5;
-                        handler.sendMessage(message);
-                        newMessage.setText("当前无可用更新");
+                        updateTools.sendUpdateMessage(5, handler);
+
                     }else {
-                        Message message = handler.obtainMessage();//检查更新完了更改ui
-                        message.what = 1;
-                        handler.sendMessage(message);
+                        updateTools.sendUpdateMessage(1, handler);
                     }
 
                 } catch (Exception e) {
@@ -169,45 +172,13 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void parseJSONWithJSONObject(String jsonData) {
-
-        try {
-            JSONArray jsonArray = new JSONArray(jsonData);
-            JSONObject jsonObject = jsonArray.getJSONObject(0);
-            try {
-                newVersion = jsonObject.getString("version");
-                uri = jsonObject.getString("Uri");
-                OTAMessage = jsonObject.getString("message");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-    }
-
-    public void download(String ri) {
-        DownloadManager dManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-        Uri uri = Uri.parse(ri);
-        DownloadManager.Request request = new DownloadManager.Request(uri);
-        request.setDestinationInExternalPublicDir("download", newVersion + ".zip");
-        request.setDescription(newVersion + "下载");
-        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-        request.setVisibleInDownloadsUi(true);
-        dManager.enqueue(request);
-    }
-
     class DownloadReceiver extends BroadcastReceiver {
 
         @SuppressLint("NewApi")
         public void onReceive(Context context, Intent intent) {
             if (intent.getAction().equals(
                     DownloadManager.ACTION_DOWNLOAD_COMPLETE)) {
-                Message message = handler.obtainMessage();
-                message.what = 3;
-                handler.sendMessage(message);
-                mode = 3;
+                updateTools.sendUpdateMessage(3, handler);
             }
         }
     }
@@ -221,7 +192,7 @@ public class MainActivity extends AppCompatActivity {
             NetworkInfo mMobile = connManager.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
             if (mWifi.isConnected()) {
                 netState = 0;
-                
+
             }else if(mMobile.isConnected()){
                 netState = 1;
                 Toast.makeText(context, "注意：你在使用手机流量哟~", Toast.LENGTH_SHORT).show();
@@ -246,6 +217,24 @@ public class MainActivity extends AppCompatActivity {
                 dialog.show();
             }
         }
+    }
+
+    private void parseJSONWithJSONObject(String jsonData) {
+
+        try {
+            JSONArray jsonArray = new JSONArray(jsonData);
+            JSONObject jsonObject = jsonArray.getJSONObject(0);
+            try {
+                newVersion = jsonObject.getString("version");
+                uri = jsonObject.getString("Uri");
+                OTAMessage = jsonObject.getString("message");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
     }
 
     @Override
