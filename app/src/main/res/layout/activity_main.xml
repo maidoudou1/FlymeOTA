@@ -45,5 +45,19 @@
         android:layout_below="@+id/version"
         android:layout_alignLeft="@+id/version"
         android:layout_alignStart="@+id/version" />
+    <EditText
+        android:id="@+id/newMessage"
+        android:layout_width="fill_parent"
+        android:gravity="top"
+        android:background="@null"
+        android:layout_height="200dp"
+        android:layout_marginBottom="19dp"
+        android:layout_above="@+id/check"
+        android:editable="false"
+        android:cursorVisible="false"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true" />
+
+
 
 </RelativeLayout>

@@ -21,6 +21,8 @@ import android.os.SystemProperties;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.os.RecoverySystem;
 import android.widget.Toast;
@@ -49,8 +51,10 @@ public class MainActivity extends AppCompatActivity {
     private Button check;
     private TextView newMessage;
     private TextView version;
+    private String needVersion;
     private File otaZip = null;
     private IntentFilter intentFilter;
+    private EditText newVersionMessage;
     private int netState = 0;//0.Wi-Fi,1.移动数据,2.无网络
     private int mode = 0;//0.检查更新,1.下载更新,2.正在下载,3.立即安装,4.正在检查更新
     private NetworkChangeReceiver networkChangeReceiver;
@@ -58,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
     private AlertDialog.Builder dialog;
     private DownloadManager dManager;
     private UpdateTools updateTools;
+    private int progress;
     private Handler handler = new Handler() {
 
         @Override
@@ -66,7 +71,8 @@ public class MainActivity extends AppCompatActivity {
             switch (msg.what) {
                 case 1:
                     check.setText("立即下载");
-                    newMessage.setText(OTAMessage);
+                    newVersionMessage.setText(OTAMessage);
+                    newMessage.setText("");
                     mode = 1;
                     break;
                 case 2:
@@ -90,6 +96,11 @@ public class MainActivity extends AppCompatActivity {
                     check.setText("检查更新");
                     newMessage.setText("无法检查更新");
                     break;
+                case 7:
+                    check.setText("检查更新");
+                    newMessage.setText("当前版本过老,请下载完整包或者历史ota升级包");
+                    mode = 0;
+                    break;
             }
         }
     };
@@ -112,6 +123,7 @@ public class MainActivity extends AppCompatActivity {
         registerReceiver(networkChangeReceiver,intentFilter);
         dialog =new AlertDialog.Builder(MainActivity.this);
         dManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+        newVersionMessage = (EditText)findViewById(R.id.newMessage);
 
         version.setText("当前版本 " + currentVersion);
 
@@ -123,6 +135,7 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "当前没有网络", Toast.LENGTH_SHORT).show();
                 }else {
                     if(mode == 0) {//0模式点击后检查更新
+                        newMessage.setText("");
                         check(OTASite);
                         updateTools.sendUpdateMessage(4, handler);
                     } else if(mode == 1) {//1模式监听下载事件然后
@@ -154,12 +167,14 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     HttpResponse httpResponse = httpClient.execute(get);
                     String s = EntityUtils.toString(httpResponse.getEntity());
+                    s = s.replace("\n","\\n");
                     parseJSONWithJSONObject(s);
                     if(newVersion.equals(currentVersion)){
                         updateTools.sendUpdateMessage(5, handler);
-
-                    }else {
+                    }else if(currentVersion.equals(needVersion)){
                         updateTools.sendUpdateMessage(1, handler);
+                    }else{
+                        updateTools.sendUpdateMessage(7, handler);
                     }
 
                 } catch (Exception e) {
@@ -228,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
                 newVersion = jsonObject.getString("version");
                 uri = jsonObject.getString("Uri");
                 OTAMessage = jsonObject.getString("message");
+                needVersion = jsonObject.getString("needVersion");
             } catch (Exception e) {
                 e.printStackTrace();
             }
